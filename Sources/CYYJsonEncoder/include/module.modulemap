@@ -1,0 +1,5 @@
+module CYYJsonEncoder {
+    header "yyjson.h"
+    export *
+}
+

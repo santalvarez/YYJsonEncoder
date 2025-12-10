@@ -2,15 +2,6 @@
 
 A high-performance JSON encoder for Swift, powered by [yyjson](https://github.com/ibireme/yyjson) — one of the fastest JSON libraries available.
 
-## Features
-
-- **Blazing Fast**: Built on yyjson, which consistently outperforms other JSON libraries in benchmarks
-- **Type-Safe**: Generic API with `YYJsonEncodable` protocol for custom types
-- **Flexible Key Encoding**: Support for camelCase, snake_case, or custom key transformations
-- **Multiple Date Strategies**: Unix timestamps, milliseconds, ISO8601, or custom formats
-- **Output Formatting**: Pretty printing with configurable indentation
-- **Memory Efficient**: Manual `reset()` for reusing encoder instances
-
 ## Installation
 
 ### Swift Package Manager

@@ -17,7 +17,7 @@ enum EventType: String {
 // Conform to YYJsonEncodable for easy encoding
 extension EventType: YYJsonEncodable {
     func encode(to encoder: YYJsonEncoder) -> ValueRef {
-        encoder.createString(rawValue)
+        rawValue.encode(to: encoder)
     }
 }
 
@@ -35,14 +35,14 @@ struct File: YYJsonEncodable {
     let path: String
     let name: String
     let metadata: String?
-    let owners: [Int64]
+    let owners: [Int]
     let certs: [Certificate]
 
     func encode(to encoder: YYJsonEncoder) -> ValueRef {
         let obj = encoder.createObject()
         encoder.add(to: obj, key: "path", value: path)
         encoder.add(to: obj, key: "name", value: name)
-        encoder.add(to: obj, key: "metadata", value: metadata)  // handles Optional automatically
+        encoder.add(to: obj, key: "metadata", value: metadata)
         encoder.add(to: obj, key: "owners", value: encoder.createArray(owners))
         encoder.add(to: obj, key: "certs", value: encoder.createArray(certs))
         return obj
@@ -51,10 +51,10 @@ struct File: YYJsonEncodable {
 
 class Proc: YYJsonEncodable {
     let file: File
-    let pid: Int64
-    let ppid: Int64
+    let pid: Int
+    let ppid: Int
 
-    init(file: File, pid: Int64, ppid: Int64) {
+    init(file: File, pid: Int, ppid: Int) {
         self.file = file
         self.pid = pid
         self.ppid = ppid
@@ -104,7 +104,7 @@ final class YYJsonEncoderTests: XCTestCase {
             )
         )
 
-        let json = try encoder.encode(event.encode(to: encoder))
+        let json = try encoder.encode(event)
 
         // Verify the JSON contains expected keys
         XCTAssertTrue(json.contains("\"date\""))
@@ -134,7 +134,7 @@ final class YYJsonEncoderTests: XCTestCase {
             )
         )
 
-        let json = try encoder.encode(event.encode(to: encoder))
+        let json = try encoder.encode(event)
 
         // Verify snake_case conversion
         XCTAssertTrue(json.contains("\"event_type\""))
@@ -265,5 +265,36 @@ final class YYJsonEncoderTests: XCTestCase {
         XCTAssertTrue(json.contains("\"float\":"))
         XCTAssertTrue(json.contains("\"double\":"))
         print("Float and double result:", json)
+    }
+
+    func testPerformanceYYJsonEncoder() throws {
+        let encoder = YYJsonEncoder()
+
+        let event = Event(
+            date: Date(),
+            eventType: .exec,
+            process: Proc(
+                file: File(
+                    path: "/bin/ls",
+                    name: "ls",
+                    metadata: nil,
+                    owners: [0],
+                    certs: []
+                ),
+                pid: 1,
+                ppid: 0
+            )
+        )
+
+        measure {
+            var lastJson = ""
+            for _ in 0..<1_000_000 {
+                do {
+                    lastJson = try encoder.encode(event)
+                } catch {
+                    XCTFail("Encoding failed: \(error)")
+                }
+            }
+        }
     }
 }

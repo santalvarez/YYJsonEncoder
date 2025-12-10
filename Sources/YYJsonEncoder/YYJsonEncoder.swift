@@ -76,8 +76,8 @@ public class YYJsonEncoder {
     }
 
     /// Reset the encoder by freeing the current document and creating a new one
-    /// Call this between encoding operations to avoid memory accumulation
-    public func reset() {
+    /// This is called automatically after encode() and encodeData()
+    private func reset() {
         if let doc = doc {
             yyjson_mut_doc_free(doc)
         }
@@ -138,8 +138,9 @@ public class YYJsonEncoder {
         return ValueRef(pointer: val, encoder: self)
     }
 
-    /// Create a string value
-    public func createString(_ value: String) -> ValueRef {
+    // MARK: - Internal Value Creation
+
+    func createString(_ value: String) -> ValueRef {
         let doc = ensureDocument()
         let val = value.withCString { cStr in
             yyjson_mut_strncpy(doc, cStr, value.utf8.count)
@@ -147,45 +148,39 @@ public class YYJsonEncoder {
         return ValueRef(pointer: val, encoder: self)
     }
 
-    /// Create an integer value
-    public func createInt(_ value: Int64) -> ValueRef {
+    func createInt(_ value: Int64) -> ValueRef {
         let doc = ensureDocument()
         let val = yyjson_mut_sint(doc, value)!
         return ValueRef(pointer: val, encoder: self)
     }
 
-    /// Create an unsigned integer value
-    public func createUInt(_ value: UInt64) -> ValueRef {
+    func createUInt(_ value: UInt64) -> ValueRef {
         let doc = ensureDocument()
         let val = yyjson_mut_uint(doc, value)!
         return ValueRef(pointer: val, encoder: self)
     }
 
-    /// Create a double value
-    public func createDouble(_ value: Double) -> ValueRef {
+    func createDouble(_ value: Double) -> ValueRef {
         let doc = ensureDocument()
         let val = yyjson_mut_real(doc, value)!
         return ValueRef(pointer: val, encoder: self)
     }
 
-    /// Create a boolean value
-    public func createBool(_ value: Bool) -> ValueRef {
+    func createBool(_ value: Bool) -> ValueRef {
         let doc = ensureDocument()
         let val = yyjson_mut_bool(doc, value)!
         return ValueRef(pointer: val, encoder: self)
     }
 
-    /// Create a null value
-    public func createNull() -> ValueRef {
+    func createNull() -> ValueRef {
         let doc = ensureDocument()
         let val = yyjson_mut_null(doc)!
         return ValueRef(pointer: val, encoder: self)
     }
 
-    // MARK: - Object Manipulation
+    // MARK: - Internal Object/Array Manipulation
 
-    /// Add a key-value pair to an object (key will be transformed based on strategy)
-    public func addToObject(_ object: ValueRef, key: String, value: ValueRef) {
+    private func addToObject(_ object: ValueRef, key: String, value: ValueRef) {
         let transformedKey = transformKey(key)
         let doc = ensureDocument()
         let keyVal = transformedKey.withCString { cStr in
@@ -194,26 +189,13 @@ public class YYJsonEncoder {
         yyjson_mut_obj_add(object.pointer, keyVal, value.pointer)
     }
 
-    /// Add a key-value pair to an object with raw key (no transformation)
-    public func addToObjectRaw(_ object: ValueRef, key: String, value: ValueRef) {
-        let doc = ensureDocument()
-        let keyVal = key.withCString { cStr in
-            yyjson_mut_strncpy(doc, cStr, key.utf8.count)
-        }!
-        yyjson_mut_obj_add(object.pointer, keyVal, value.pointer)
-    }
-
-    // MARK: - Array Manipulation
-
-    /// Append a value to an array
-    public func addToArray(_ array: ValueRef, value: ValueRef) {
+    func addToArray(_ array: ValueRef, value: ValueRef) {
         yyjson_mut_arr_append(array.pointer, value.pointer)
     }
 
-    // MARK: - JSON Writing
+    // MARK: - Internal JSON Writing
 
-    /// Write a JSON value to a String
-    public func write(_ value: ValueRef) throws -> String {
+    private func write(_ value: ValueRef) throws -> String {
         var err = yyjson_write_err()
         var len: Int = 0
         let flags = yyjson_write_flag(outputFormatting.rawValue)
@@ -229,22 +211,27 @@ public class YYJsonEncoder {
         return String(cString: cString)
     }
 
-    /// Write a JSON value to Data
-    public func writeData(_ value: ValueRef) throws -> Data {
+    private func writeData(_ value: ValueRef) throws -> Data {
         let string = try write(value)
         return Data(string.utf8)
     }
 
-    /// Set the root value and write to String
-    public func encode(_ value: ValueRef) throws -> String {
-        yyjson_mut_doc_set_root(ensureDocument(), value.pointer)
-        return try write(value)
+    /// Encode a YYJsonEncodable value to a JSON String
+    /// The encoder automatically resets after this call, ready for the next encoding operation
+    public func encode<T: YYJsonEncodable>(_ value: T) throws -> String {
+        let ref = value.encode(to: self)
+        yyjson_mut_doc_set_root(ensureDocument(), ref.pointer)
+        defer { reset() }
+        return try write(ref)
     }
 
-    /// Set the root value and write to Data
-    public func encodeData(_ value: ValueRef) throws -> Data {
-        yyjson_mut_doc_set_root(ensureDocument(), value.pointer)
-        return try writeData(value)
+    /// Encode a YYJsonEncodable value to Data
+    /// The encoder automatically resets after this call, ready for the next encoding operation
+    public func encodeData<T: YYJsonEncodable>(_ value: T) throws -> Data {
+        let ref = value.encode(to: self)
+        yyjson_mut_doc_set_root(ensureDocument(), ref.pointer)
+        defer { reset() }
+        return try writeData(ref)
     }
 
     // MARK: - Generic Methods
@@ -279,37 +266,9 @@ public class YYJsonEncoder {
         return array
     }
 
-    // MARK: - Convenience Methods
+    // MARK: - Internal Date Handling
 
-    /// Create an array from a Swift array of integers
-    public func createArray(_ values: [Int64]) -> ValueRef {
-        let array = createArray()
-        for value in values {
-            addToArray(array, value: createInt(value))
-        }
-        return array
-    }
-
-    /// Create an array from a Swift array of strings
-    public func createArray(_ values: [String]) -> ValueRef {
-        let array = createArray()
-        for value in values {
-            addToArray(array, value: createString(value))
-        }
-        return array
-    }
-
-    /// Create a value from an optional - returns null if nil
-    public func createOptional<T>(_ value: T?, creator: (T) -> ValueRef) -> ValueRef {
-        if let value = value {
-            return creator(value)
-        } else {
-            return createNull()
-        }
-    }
-
-    /// Create a string value from a Date
-    public func createDate(_ date: Date) -> ValueRef {
+    func createDate(_ date: Date) -> ValueRef {
         switch dateEncodingStrategy {
         case .secondsSince1970:
             return createDouble(date.timeIntervalSince1970)
